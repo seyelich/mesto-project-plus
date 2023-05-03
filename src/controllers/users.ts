@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import mongoose from 'mongoose';
 import User from '../models/user';
 import { CustomRequest } from '../types';
 import {
@@ -8,7 +9,6 @@ import {
   STATUS_CODE_200,
 } from '../constants/status-codes';
 import NotFoundError from '../exceptions/not-found-err';
-import ClientError from '../exceptions/client-err';
 
 export const getUsers = (req: CustomRequest, res: Response) => {
   User.find({})
@@ -27,8 +27,12 @@ export const getOneUser = (req: CustomRequest, res: Response) => {
       return res.status(STATUS_CODE_200).send(user);
     })
     .catch((err) => {
-      if (err instanceof Error && err.name === 'NotFound') {
+      if ((err instanceof Error && err.name === 'NotFound')) {
         return res.status(ERROR_CODE_404).send({ message: err.message });
+      }
+
+      if ((err instanceof mongoose.Error.CastError)) {
+        return res.status(ERROR_CODE_400).send({ message: 'Введены неверные данные' });
       }
 
       return res.status(ERROR_CODE_500).send({ message: 'На сервере произошла ошибка' });
@@ -38,16 +42,11 @@ export const getOneUser = (req: CustomRequest, res: Response) => {
 export const createUser = (req: CustomRequest, res: Response) => {
   const { name, about, avatar } = req.body;
 
-  if (!name || !about || !avatar) {
-    const error = new ClientError('Переданы некорректные данные');
-    throw error;
-  }
-
   User.create({ name, about, avatar })
     .then((user) => res.status(STATUS_CODE_200).send({ data: user }))
     .catch((err) => {
-      if (err instanceof Error && err.name === 'ClientError') {
-        return res.status(ERROR_CODE_400).send({ message: err.message });
+      if (err instanceof mongoose.Error.CastError) {
+        return res.status(ERROR_CODE_400).send({ message: 'Введены неверные данные' });
       }
 
       return res.status(ERROR_CODE_500).send({ message: 'На сервере произошла ошибка' });
@@ -68,11 +67,6 @@ export const updateProfile = (req: CustomRequest, res: Response) => {
         throw error;
       }
 
-      if (!name || !about) {
-        const error = new ClientError('Переданы некорректные данные');
-        throw error;
-      }
-
       res.status(STATUS_CODE_200).send({ data: user });
     })
     .catch((err) => {
@@ -80,8 +74,8 @@ export const updateProfile = (req: CustomRequest, res: Response) => {
         return res.status(ERROR_CODE_404).send({ message: err.message });
       }
 
-      if (err instanceof Error && err.name === 'ClientError') {
-        return res.status(ERROR_CODE_400).send({ message: err.message });
+      if (err instanceof mongoose.Error.CastError) {
+        return res.status(ERROR_CODE_400).send({ message: 'Введены неверные данные' });
       }
 
       return res.status(ERROR_CODE_500).send({ message: 'На сервере произошла ошибка' });
@@ -102,11 +96,6 @@ export const updateAvatar = (req: CustomRequest, res: Response) => {
         throw error;
       }
 
-      if (!avatar) {
-        const error = new ClientError('Переданы некорректные данные');
-        throw error;
-      }
-
       res.status(STATUS_CODE_200).send({ data: user });
     })
     .catch((err) => {
@@ -114,8 +103,8 @@ export const updateAvatar = (req: CustomRequest, res: Response) => {
         return res.status(ERROR_CODE_404).send({ message: err.message });
       }
 
-      if (err instanceof Error && err.name === 'ClientError') {
-        return res.status(ERROR_CODE_400).send({ message: err.message });
+      if (err instanceof mongoose.Error.CastError) {
+        return res.status(ERROR_CODE_400).send({ message: 'Введены неверные данные' });
       }
 
       return res.status(ERROR_CODE_500).send({ message: 'На сервере произошла ошибка' });

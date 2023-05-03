@@ -1,6 +1,5 @@
 import express from 'express';
 import mongoose from 'mongoose';
-import path from 'path';
 import router from './routes';
 import { CustomRequest } from './types';
 
@@ -10,7 +9,6 @@ const app = express();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
 
 app.use((req, res, next) => {
   const reqCustom = req as CustomRequest;
@@ -22,6 +20,8 @@ app.use((req, res, next) => {
 });
 
 app.use(router);
+
+app.use((req, res) => res.status(404).send({ message: 'Такой страницы не существует' }));
 
 async function connect() {
   try {

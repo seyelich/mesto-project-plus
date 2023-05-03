@@ -11,6 +11,5 @@ export interface IUser {
 }
 
 export interface CustomError extends Error {
-  name: string,
   statusCode: number,
 }
