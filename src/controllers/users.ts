@@ -45,7 +45,7 @@ export const createUser = (req: CustomRequest, res: Response) => {
   User.create({ name, about, avatar })
     .then((user) => res.status(STATUS_CODE_200).send({ data: user }))
     .catch((err) => {
-      if (err instanceof mongoose.Error.CastError) {
+      if (err instanceof mongoose.Error.ValidationError) {
         return res.status(ERROR_CODE_400).send({ message: 'Введены неверные данные' });
       }
 
@@ -74,7 +74,10 @@ export const updateProfile = (req: CustomRequest, res: Response) => {
         return res.status(ERROR_CODE_404).send({ message: err.message });
       }
 
-      if (err instanceof mongoose.Error.CastError) {
+      if (
+        err instanceof mongoose.Error.CastError
+        || err instanceof mongoose.Error.ValidationError
+      ) {
         return res.status(ERROR_CODE_400).send({ message: 'Введены неверные данные' });
       }
 
@@ -103,7 +106,10 @@ export const updateAvatar = (req: CustomRequest, res: Response) => {
         return res.status(ERROR_CODE_404).send({ message: err.message });
       }
 
-      if (err instanceof mongoose.Error.CastError) {
+      if (
+        err instanceof mongoose.Error.CastError
+        || err instanceof mongoose.Error.ValidationError
+      ) {
         return res.status(ERROR_CODE_400).send({ message: 'Введены неверные данные' });
       }
 

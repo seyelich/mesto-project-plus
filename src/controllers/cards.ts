@@ -25,10 +25,7 @@ export const createCard = (req: CustomRequest, res: Response) => {
   Сard.create({ name, link, owner: req.user })
     .then((el) => res.send(el))
     .catch((err) => {
-      if (
-        err instanceof mongoose.Error.CastError
-        || err instanceof mongoose.Error.ValidationError
-      ) {
+      if (err instanceof mongoose.Error.ValidationError) {
         return res.status(ERROR_CODE_400).send({ message: 'Введены неверные данные' });
       }
 
@@ -49,6 +46,10 @@ export const deleteCard = (req: CustomRequest, res: Response) => {
     .catch((err) => {
       if (err instanceof Error && err.name === 'NotFound') {
         return res.status(ERROR_CODE_404).send({ message: err.message });
+      }
+
+      if (err instanceof mongoose.Error.CastError) {
+        return res.status(ERROR_CODE_400).send({ message: 'Введены неверные данные' });
       }
 
       return res.status(ERROR_CODE_500).send({ message: 'На сервере произошла ошибка' });
