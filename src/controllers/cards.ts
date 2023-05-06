@@ -1,65 +1,52 @@
-import { Response } from 'express';
-import mongoose from 'mongoose';
-import Сard from '../models/card';
-import { CustomRequest } from '../types';
-import {
-  ERROR_CODE_400,
-  ERROR_CODE_404,
-  ERROR_CODE_500,
-  STATUS_CODE_200,
-} from '../constants/status-codes';
-import NotFoundError from '../exceptions/not-found-err';
+import { NextFunction, Response } from 'express';
+import Card from '../models/card';
+import { ITokenPayload, SessionRequest } from '../types';
+import { STATUS_CODE_200 } from '../constants/status-codes';
+import NotFoundError from '../exceptions/notFound';
+import ForbiddenError from '../exceptions/forbidden';
 
-export const getCards = (req: CustomRequest, res: Response) => {
-  Сard.find({})
+export const getCards = (req: SessionRequest, res: Response, next: NextFunction) => {
+  Card.find({})
     .populate(['owner', 'likes'])
-    .then((cards) => {
-      res.status(STATUS_CODE_200).send({ data: cards });
-    })
-    .catch(() => res.status(ERROR_CODE_500).send({ message: 'На сервере произошла ошибка' }));
+    .then((cards) => res.status(STATUS_CODE_200).send({ data: cards }))
+    .catch(next);
 };
 
-export const createCard = (req: CustomRequest, res: Response) => {
+export const createCard = (req: SessionRequest, res: Response, next: NextFunction) => {
   const { name, link } = req.body;
 
-  Сard.create({ name, link, owner: req.user })
-    .then((el) => res.send(el))
-    .catch((err) => {
-      if (err instanceof mongoose.Error.ValidationError) {
-        return res.status(ERROR_CODE_400).send({ message: 'Введены неверные данные' });
-      }
-
-      return res.status(ERROR_CODE_500).send({ message: 'На сервере произошла ошибка' });
-    });
+  Card.create({ name, link, owner: req.user })
+    .then((el) => res.status(STATUS_CODE_200).send({ data: el }))
+    .catch(next);
 };
 
-export const deleteCard = (req: CustomRequest, res: Response) => {
-  Сard.findByIdAndDelete(req.params.cardId)
+export const deleteCard = (req: SessionRequest, res: Response, next: NextFunction) => {
+  const { _id } = req.user as ITokenPayload;
+  const { cardId } = req.params;
+
+  Card.findById(cardId)
     .then((card) => {
       if (!card) {
-        const error = new NotFoundError('Карточка по указанному _id не найдена');
-        throw error;
+        throw new NotFoundError('Карточка по указанному _id не найдена');
+      } else {
+        return card;
       }
-
-      return res.status(STATUS_CODE_200).send(card);
     })
-    .catch((err) => {
-      if (err instanceof Error && err.name === 'NotFound') {
-        return res.status(ERROR_CODE_404).send({ message: err.message });
+    .then((card) => {
+      if (card.owner.toString() !== _id) {
+        throw new ForbiddenError('У вас нет нужных прав для данной операции');
+      } else {
+        return Card.deleteOne({ _id: cardId })
+          .then(() => res.status(STATUS_CODE_200).send({ data: card }));
       }
-
-      if (err instanceof mongoose.Error.CastError) {
-        return res.status(ERROR_CODE_400).send({ message: 'Введены неверные данные' });
-      }
-
-      return res.status(ERROR_CODE_500).send({ message: 'На сервере произошла ошибка' });
-    });
+    })
+    .catch(next);
 };
 
-export const likeCard = (req: CustomRequest, res: Response) => {
-  Сard.findByIdAndUpdate(
+export const likeCard = (req: SessionRequest, res: Response, next: NextFunction) => {
+  Card.findByIdAndUpdate(
     req.params.cardId,
-    { $addToSet: { likes: req.user?._id } },
+    { $addToSet: { likes: req.user } },
     { new: true },
   )
     .populate('owner')
@@ -71,23 +58,13 @@ export const likeCard = (req: CustomRequest, res: Response) => {
 
       res.status(STATUS_CODE_200).send({ data: card });
     })
-    .catch((err) => {
-      if (err instanceof Error && err.name === 'NotFound') {
-        return res.status(ERROR_CODE_404).send({ message: err.message });
-      }
-
-      if (err instanceof mongoose.Error.CastError) {
-        return res.status(ERROR_CODE_400).send({ message: 'Введены неверные данные' });
-      }
-
-      return res.status(ERROR_CODE_500).send({ message: 'На сервере произошла ошибка' });
-    });
+    .catch(next);
 };
 
-export const deleteLikeCard = (req: CustomRequest, res: Response) => {
-  Сard.findByIdAndUpdate(
+export const deleteLikeCard = (req: SessionRequest, res: Response, next: NextFunction) => {
+  Card.findByIdAndUpdate(
     req.params.cardId,
-    { $pull: { likes: req.user?._id } },
+    { $pull: { likes: req.user } },
     { new: true },
   )
     .then((card) => {
@@ -98,15 +75,5 @@ export const deleteLikeCard = (req: CustomRequest, res: Response) => {
 
       res.status(STATUS_CODE_200).send({ data: card });
     })
-    .catch((err) => {
-      if (err instanceof Error && err.name === 'NotFound') {
-        return res.status(ERROR_CODE_404).send({ message: err.message });
-      }
-
-      if (err instanceof mongoose.Error.CastError) {
-        return res.status(ERROR_CODE_400).send({ message: 'Введены неверные данные' });
-      }
-
-      return res.status(ERROR_CODE_500).send({ message: 'На сервере произошла ошибка' });
-    });
+    .catch(next);
 };

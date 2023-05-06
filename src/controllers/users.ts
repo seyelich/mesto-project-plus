@@ -1,118 +1,127 @@
-import { Response } from 'express';
-import mongoose from 'mongoose';
+import { NextFunction, Response } from 'express';
+import { QueryOptions, UpdateQuery } from 'mongoose';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import User from '../models/user';
-import { CustomRequest } from '../types';
-import {
-  ERROR_CODE_400,
-  ERROR_CODE_404,
-  ERROR_CODE_500,
-  STATUS_CODE_200,
-} from '../constants/status-codes';
-import NotFoundError from '../exceptions/not-found-err';
+import { ITokenPayload, IUser, SessionRequest } from '../types';
+import { STATUS_CODE_200 } from '../constants/status-codes';
+import NotFoundError from '../exceptions/notFound';
+import ForbiddenError from '../exceptions/forbidden';
+import AuthError from '../exceptions/auth';
+import ConflictError from '../exceptions/conflict';
 
-export const getUsers = (req: CustomRequest, res: Response) => {
-  User.find({})
-    .then((users) => res.status(STATUS_CODE_200).send({ data: users }))
-    .catch(() => res.status(ERROR_CODE_500).send({ message: 'На сервере произошла ошибка' }));
+export const login = (req: SessionRequest, res: Response, next: NextFunction) => {
+  const { email, password } = req.body;
+
+  return User.findUserByCredentials(email, password)
+    .then((user) => {
+      const token = jwt.sign({ _id: user._id }, 'super-strong-secret', { expiresIn: '7d' });
+
+      res.status(STATUS_CODE_200).send({ token });
+    })
+    .catch(() => next(new AuthError('Необходима авторизация')));
 };
 
-export const getOneUser = (req: CustomRequest, res: Response) => {
+export const getUsers = (req: SessionRequest, res: Response, next: NextFunction) => {
+  User.find({})
+    .then((users) => res.status(STATUS_CODE_200).send({ data: users }))
+    .catch(next);
+};
+
+export const getOneUser = (req: SessionRequest, res: Response, next: NextFunction) => {
   User.findById(req.params.userId)
     .then((user) => {
       if (!user) {
-        const error = new NotFoundError('Пользователь по указанному _id не найден');
-        throw error;
+        throw new NotFoundError('Пользователь по указанному _id не найден');
       }
 
-      return res.status(STATUS_CODE_200).send(user);
+      return res.status(STATUS_CODE_200).send({ data: user });
     })
-    .catch((err) => {
-      if ((err instanceof Error && err.name === 'NotFound')) {
-        return res.status(ERROR_CODE_404).send({ message: err.message });
-      }
-
-      if ((err instanceof mongoose.Error.CastError)) {
-        return res.status(ERROR_CODE_400).send({ message: 'Введены неверные данные' });
-      }
-
-      return res.status(ERROR_CODE_500).send({ message: 'На сервере произошла ошибка' });
-    });
+    .catch(next);
 };
 
-export const createUser = (req: CustomRequest, res: Response) => {
-  const { name, about, avatar } = req.body;
+export const createUser = (req: SessionRequest, res: Response, next: NextFunction) => {
+  const {
+    name,
+    about,
+    avatar,
+    email,
+    password,
+  } = req.body;
 
-  User.create({ name, about, avatar })
-    .then((user) => res.status(STATUS_CODE_200).send({ data: user }))
-    .catch((err) => {
-      if (err instanceof mongoose.Error.ValidationError) {
-        return res.status(ERROR_CODE_400).send({ message: 'Введены неверные данные' });
+  User.findOne({ email })
+    .then((user) => {
+      if (!user) {
+        bcrypt.hash(password, 10)
+          .then((hash) => User.create({
+            name,
+            about,
+            avatar,
+            email,
+            password: hash,
+          }))
+          .then((newUser) => res.status(STATUS_CODE_200).send({ data: newUser }));
+      } else {
+        throw new ConflictError('Пользователь с таким email уже существует');
       }
-
-      return res.status(ERROR_CODE_500).send({ message: 'На сервере произошла ошибка' });
-    });
+    })
+    .catch(next);
 };
 
-export const updateProfile = (req: CustomRequest, res: Response) => {
+const handleUpd = (
+  req: SessionRequest,
+  res: Response,
+  next: NextFunction,
+  query: UpdateQuery<IUser>,
+  options: QueryOptions,
+) => {
+  const { _id } = req.user as ITokenPayload;
+
+  User.findById(req.user)
+    .then((user) => {
+      if (!user) {
+        throw new NotFoundError('Пользователь по указанному _id не найден');
+      } else {
+        return user;
+      }
+    })
+    .then((currUser) => {
+      if (currUser._id.toString() !== _id) {
+        throw new ForbiddenError('У вас нет нужных прав для данной операции');
+      } else {
+        return User.updateOne({ _id: currUser._id }, query, options)
+          .then(() => res.status(STATUS_CODE_200).send({ data: currUser }));
+      }
+    })
+    .catch(next);
+};
+
+export const updateProfile = (req: SessionRequest, res: Response, next: NextFunction) => {
   const { name, about } = req.body;
 
-  User.findByIdAndUpdate(
-    req.user?._id,
+  handleUpd(
+    req,
+    res,
+    next,
     { name, about },
-    { new: true },
-  )
-    .then((user) => {
-      if (!user) {
-        const error = new NotFoundError('Пользователь по указанному _id не найден');
-        throw error;
-      }
-
-      res.status(STATUS_CODE_200).send({ data: user });
-    })
-    .catch((err) => {
-      if (err instanceof Error && err.name === 'NotFound') {
-        return res.status(ERROR_CODE_404).send({ message: err.message });
-      }
-
-      if (
-        err instanceof mongoose.Error.CastError
-        || err instanceof mongoose.Error.ValidationError
-      ) {
-        return res.status(ERROR_CODE_400).send({ message: 'Введены неверные данные' });
-      }
-
-      return res.status(ERROR_CODE_500).send({ message: 'На сервере произошла ошибка' });
-    });
+    { new: true, runValidators: true },
+  );
 };
 
-export const updateAvatar = (req: CustomRequest, res: Response) => {
+export const updateAvatar = (req: SessionRequest, res: Response, next: NextFunction) => {
   const { avatar } = req.body;
 
-  User.findByIdAndUpdate(
-    req.user?._id,
+  handleUpd(
+    req,
+    res,
+    next,
     { avatar },
-    { new: true },
-  )
-    .then((user) => {
-      if (!user) {
-        const error = new NotFoundError('Пользователь по указанному _id не найден');
-        throw error;
-      }
+    { new: true, runValidators: true },
+  );
+};
 
-      res.status(STATUS_CODE_200).send({ data: user });
-    })
-    .catch((err) => {
-      if (err instanceof Error && err.name === 'NotFound') {
-        return res.status(ERROR_CODE_404).send({ message: err.message });
-      }
-
-      if (
-        err instanceof mongoose.Error.CastError
-        || err instanceof mongoose.Error.ValidationError
-      ) {
-        return res.status(ERROR_CODE_400).send({ message: 'Введены неверные данные' });
-      }
-
-      return res.status(ERROR_CODE_500).send({ message: 'На сервере произошла ошибка' });
-    });
+export const getMyInfo = (req: SessionRequest, res: Response, next: NextFunction) => {
+  User.findById(req.user)
+    .then((user) => res.status(STATUS_CODE_200).send({ data: user }))
+    .catch(next);
 };
